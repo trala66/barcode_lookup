@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 from flask import Flask, render_template_string
 import psycopg2
-import ssl # Importér ssl for at sikre, at 'DB_SSLMODE' understøttes af psycopg2
+# import ssl # Importér ssl for at sikre, at 'DB_SSLMODE' understøttes af psycopg2
 
 # Dette er kun til lokal test, da Railway selv injicerer variablerne.
 # Vi beholder det for at undgå lokale fejl.
@@ -21,17 +21,18 @@ def get_db_config_and_env_status():
     config = {}
     env_status = {}
     
-    for name in DB_VARIABLE_NAMES:
+    for name in DB_VARIABLE_NAMES: # loop gennem environment variabler og gem dem i env_status dict
         value = os.environ.get(name)
         env_status[name] = f"'{value}'" if value else "❌ MANGES (eller er tom)"
         
-        # Særlig behandling for PORT: skal konverteres til int for psycopg2
+        # Behandling for PORT nummer: heltal, så skal konverteres til int
         if name == 'DATABASE_PORT' and value:
              try:
                  config['port'] = int(value)
              except ValueError:
                  config['port'] = value # Beholder strengen, hvis konvertering fejler
-        # Almindelig behandling for alle andre variabler
+
+        # De andre variabler
         elif name == 'DATABASE_HOST':
              config['host'] = value
         elif name == 'DATABASE_NAME':
@@ -46,7 +47,7 @@ def get_db_config_and_env_status():
     return config, env_status
 
 def fetch_first_product(config):
-    """Forsøg at oprette forbindelse og hente den første række."""
+    # Forsøg at oprette forbindelse og hent første række
     connection = None
     result = None
     error = None
@@ -59,12 +60,12 @@ def fetch_first_product(config):
         return result, error
 
     try:
-        # psycopgy2.connect forventer nøglerne: host, database, user, password, port, sslmode
+        # Overfør nøglerne: host, database, user, password, port, sslmode til psycopg2 connect
         connection = psycopg2.connect(**config)
         
         with connection.cursor() as cursor:
             # Hent de første kolonner og 1 række til test
-            cursor.execute("SELECT * FROM products LIMIT 1;")
+            cursor.execute("SELECT * FROM products LIMIT 1;") # kørsel af SQL forespørgsel
             row = cursor.fetchone()
             col_names = [desc[0] for desc in cursor.description]
             
@@ -105,7 +106,7 @@ def test_db():
     else:
         db_result_html = f"<h2 class='text-2xl text-yellow-600 mb-4'>⚠️ Database Test Resultat</h2><p class='bg-yellow-100 p-3 rounded text-yellow-800'>{result}</p>"
 
-
+    # inline HTML til browser
     html_content = f"""
     <html>
     <head>
