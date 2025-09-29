@@ -1,21 +1,18 @@
-
+# db_test_app.py (Minimal version til test af databaseforbindelse)
 import os
 from dotenv import load_dotenv
-from flask import Flask, request, render_template
+from flask import Flask, render_template_string
 import psycopg2
-import sys
-
-# --- Initialisering ---
 
 # Indlæs miljøvariabler (til lokal test)
-load_dotenv()
+# load_dotenv()
 
 app = Flask(__name__)
 
 # Database konfiguration
 def get_db_config():
-    """Henter databasekonfiguration fra miljøvariabler."""
-    return {
+    """Henter databasekonfiguration fra miljøvariabler og logger dem."""
+    config = {
         'host': os.environ.get('DATABASE_HOST'),
         'database': os.environ.get('DATABASE_NAME'),
         'user': os.environ.get('DATABASE_USER'),
@@ -23,18 +20,11 @@ def get_db_config():
         'port': int(os.environ.get('DATABASE_PORT', '10342')),
         'sslmode': os.environ.get('DB_SSLMODE', 'require')
     }
-
-# --- Database Funktioner ---
-
-def connect_to_database():
-    """Opretter forbindelse til PostgreSQL databasen."""
-    config = get_db_config()
     
     # Simpel maskering af password til logging
     def _mask(s, keep=2):
         return s[:keep] + "..." if s and len(s) > keep else "..."
-
-    '''    
+        
     print(
         "DB params -> host=", config.get('host'),
         " db=", config.get('database'),
@@ -43,86 +33,68 @@ def connect_to_database():
         " sslmode=", config.get('sslmode'),
         " pwd=", _mask(config.get('password', ''))
     )
-    '''
+    return config
 
-    try:
-        connection = psycopg2.connect(**config)
-        print("Forbindelse til database oprettet succesfuldt")
-        return connection
-    except Exception as e:
-        print(f"Fejl ved oprettelse af databaseforbindelse: {e}")
-        return None
-
-def get_product_info(barcode):
-    """Henter produktinformation baseret på stregkoden fra databasen."""
-    connection = connect_to_database()
-    if not connection:
-        return {'error': "Kunne ikke oprette forbindelse til databasen.", 'barcode': barcode}
-    
-    product_info = None
-    try:
-        with connection.cursor() as cursor:
-            # SQL forespørgsel til at finde produkt baseret på stregkode
-            query = """
-            SELECT product_id, description, unitprice, quantity 
-            FROM products 
-            WHERE barcode = %s
-            """
-            cursor.execute(query, (barcode,))
-            result = cursor.fetchone()
-            
-            if result:
-                product_id, description, unitprice, quantity = result
-                product_info = {
-                    'product_id': product_id,
-                    'description': description,
-                    'unitprice': f"{unitprice} kr.",
-                    'quantity': quantity,
-                    'barcode': barcode
-                }
-            else:
-                product_info = {'error': f"Produkt ikke fundet i databasen.", 'barcode': barcode}
-                
-    except Exception as e:
-        print(f"Fejl ved databaseforespørgsel: {e}")
-        product_info = {'error': f"Databasefejl under forespørgsel: {e}", 'barcode': barcode}
-    finally:
-        connection.close()
-    
-    return product_info
-
-# --- Flask Ruter ---
-
-@app.route('/', methods=['GET', 'POST'])
-def barcode_lookup():
-    """
-    Håndterer både visning af formularen (GET) og opslag (POST).
-    """
+def fetch_first_product():
+    """Forsøg at oprette forbindelse og hente den første række."""
+    config = get_db_config()
+    connection = None
     result = None
     error = None
-    barcode = ""
+    
+    try:
+        # Tjek om host er sat, da None får psycopg2 til at lede efter en socket
+        if not config.get('host'):
+             raise ValueError(f"DATABASE_HOST er tom eller mangler. Værdier: {config}")
 
-    if request.method == 'POST':
-        # Forsøg at hente stregkoden fra formulardata
-        barcode = request.form.get('barcode').strip()
+        connection = psycopg2.connect(**config)
         
-        if barcode:
-            # Udfør databaseopslag
-            product_info = get_product_info(barcode)
+        with connection.cursor() as cursor:
+            # Hent de første 5 kolonner og 1 række til test
+            cursor.execute("SELECT * FROM products LIMIT 1;")
+            row = cursor.fetchone()
+            col_names = [desc[0] for desc in cursor.description]
             
-            if 'error' in product_info:
-                error = product_info['error']
+            if row:
+                result = dict(zip(col_names, row))
             else:
-                result = product_info
-        else:
-            error = "Indtast venligst en stregkode."
+                result = "Tabellen 'products' er tom."
+                
+    except Exception as e:
+        error = f"Databaseforbindelsesfejl: {e}. Forsøgte at forbinde med konfiguration: {config}"
+        
+    finally:
+        if connection:
+            connection.close()
             
-    # Render skabelonen med resultater/fejl, hvis de eksisterer
-    return render_template('index.html', result=result, error=error, current_barcode=barcode)
+    return result, error
 
-# --- Deployment ---
+@app.route('/')
+def test_db():
+    result, error = fetch_first_product()
+
+    if error:
+        # Brug en enkel HTML-streng til at vise fejl
+        html_content = f"""
+        <html><body>
+        <h1 style='color: red;'>❌ Database Fejl</h1>
+        <pre>{error}</pre>
+        <p>Tjek venligst loggen for at sikre, at DATABASE_HOST er sat korrekt.</p>
+        </body></html>
+        """
+    else:
+        # Brug en enkel HTML-streng til at vise succes/resultat
+        html_content = f"""
+        <html><body>
+        <h1 style='color: green;'>✅ Database Forbindelse Virker</h1>
+        <h2>Første post i 'products':</h2>
+        <pre>{result}</pre>
+        </body></html>
+        """
+        
+    return render_template_string(html_content)
+
 
 if __name__ == '__main__':
-    # Brug miljøvariabel for porten, hvilket er nødvendigt for Railway
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=True, host='0.0.0.0', port=port)
