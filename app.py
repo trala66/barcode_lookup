@@ -3,8 +3,10 @@ import os
 from dotenv import load_dotenv
 from flask import Flask, render_template_string
 import psycopg2
+import ssl # Importér ssl for at sikre, at 'DB_SSLMODE' understøttes af psycopg2
 
-# Vi lader denne stå, selvom den ikke bruges på Railway, for at undgå fejl under lokal test.
+# Dette er kun til lokal test, da Railway selv injicerer variablerne.
+# Vi beholder det for at undgå lokale fejl.
 load_dotenv() 
 
 app = Flask(__name__)
@@ -19,15 +21,28 @@ def get_db_config_and_env_status():
     config = {}
     env_status = {}
     
-    # Indsaml både konfigurationen og miljøstatus for debug
     for name in DB_VARIABLE_NAMES:
         value = os.environ.get(name)
         env_status[name] = f"'{value}'" if value else "❌ MANGES (eller er tom)"
-        if name in ['DATABASE_PORT', 'DB_SSLMODE']:
-             config[name] = int(value) if name == 'DATABASE_PORT' and value else value
-        else:
-             config[name] = value
-
+        
+        # Særlig behandling for PORT: skal konverteres til int for psycopg2
+        if name == 'DATABASE_PORT' and value:
+             try:
+                 config['port'] = int(value)
+             except ValueError:
+                 config['port'] = value # Beholder strengen, hvis konvertering fejler
+        # Almindelig behandling for alle andre variabler
+        elif name == 'DATABASE_HOST':
+             config['host'] = value
+        elif name == 'DATABASE_NAME':
+             config['database'] = value
+        elif name == 'DATABASE_USER':
+             config['user'] = value
+        elif name == 'DATABASE_PASSWORD':
+             config['password'] = value
+        elif name == 'DB_SSLMODE':
+             config['sslmode'] = value
+        
     return config, env_status
 
 def fetch_first_product(config):
@@ -36,16 +51,19 @@ def fetch_first_product(config):
     result = None
     error = None
     
-    try:
-        # Tjek om host er sat, da None får psycopg2 til at lede efter en socket
-        if not config.get('host'):
-             # Returner fejl her, da vi ved, at psycopg2 vil fejle
-             raise ValueError("DATABASE_HOST er tom eller mangler.")
+    # Validering: Tjekker, at host er en streng (ikke None) og port er et heltal
+    is_valid_config = isinstance(config.get('host'), str) and isinstance(config.get('port'), int)
 
+    if not is_valid_config:
+        error = f"Konfigurationsfejl: Host er ikke gyldig (type: {type(config.get('host'))}) eller Port er ikke et heltal (type: {type(config.get('port'))}). Tjek jeres Railway variabler."
+        return result, error
+
+    try:
+        # psycopgy2.connect forventer nøglerne: host, database, user, password, port, sslmode
         connection = psycopg2.connect(**config)
         
         with connection.cursor() as cursor:
-            # Hent de første 5 kolonner og 1 række til test
+            # Hent de første kolonner og 1 række til test
             cursor.execute("SELECT * FROM products LIMIT 1;")
             row = cursor.fetchone()
             col_names = [desc[0] for desc in cursor.description]
@@ -56,7 +74,7 @@ def fetch_first_product(config):
                 result = "Tabellen 'products' er tom."
                 
     except Exception as e:
-        error = str(e)
+        error = f"Databaseforbindelsesfejl: {e}"
         
     finally:
         if connection:
@@ -68,25 +86,22 @@ def fetch_first_product(config):
 def test_db():
     config, env_status = get_db_config_and_env_status()
     
-    # Forsøg kun at hente produktet, hvis hosten findes
-    if config.get('host'):
-        result, db_error = fetch_first_product(config)
-    else:
-        result = None
-        db_error = "Kan ikke teste database. DATABASE_HOST er tom i miljøet."
-
-
+    result, db_error = fetch_first_product(config)
+    
     # --- Vis miljøstatus og resultat i HTML ---
     
     env_table = "".join([
-        f"<li class='flex justify-between border-b py-2'><span class='font-mono text-gray-600'>{name}</span><span class='font-bold {('text-red-500' if 'MANGES' in status else 'text-green-600')}'>{status}</span></li>" 
+        f"<li class='flex justify-between border-b py-2'><span class='font-mono text-gray-600'>{name}</span><span class='font-bold {('text-red-500' if 'MANGES' in status or 'None' in status else 'text-green-600')}'>{status}</span></li>" 
         for name, status in env_status.items()
     ])
 
+    # Omdan konfiguration til en pænere streng for debug
+    config_display = ", ".join([f"{k}: {v!r}" for k, v in config.items()])
+
     if db_error:
-        db_result_html = f"<h2 class='text-2xl text-red-600 mb-4'>❌ Databaseforbindelsesfejl</h2><p class='bg-red-100 p-3 rounded text-red-800'>{db_error}</p>"
+        db_result_html = f"<h2 class='text-2xl text-red-600 mb-4'>❌ Databaseforbindelsesfejl</h2><p class='bg-red-100 p-3 rounded text-red-800 break-words whitespace-pre-wrap'>{db_error}</p>"
     elif result:
-        db_result_html = f"<h2 class='text-2xl text-green-600 mb-4'>✅ Forbindelse og Forespørgsel Lykkedes</h2><pre class='bg-gray-100 p-3 rounded'>{result}</pre>"
+        db_result_html = f"<h2 class='text-2xl text-green-600 mb-4'>✅ Forbindelse og Forespørgsel Lykkedes</h2><pre class='bg-gray-100 p-3 rounded overflow-auto whitespace-pre-wrap'>{result}</pre>"
     else:
         db_result_html = f"<h2 class='text-2xl text-yellow-600 mb-4'>⚠️ Database Test Resultat</h2><p class='bg-yellow-100 p-3 rounded text-yellow-800'>{result}</p>"
 
@@ -96,12 +111,17 @@ def test_db():
     <head>
         <title>Railway DB Debugger</title>
         <script src="https://cdn.tailwindcss.com"></script>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          /* Sikrer Inter-fonten */
+          body {{ font-family: 'Inter', sans-serif; }}
+        </style>
     </head>
-    <body class="bg-gray-50 p-8">
+    <body class="bg-gray-50 p-4 sm:p-8">
         <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-xl">
-            <h1 class="text-3xl font-bold mb-6 text-center text-indigo-700">Railway Miljø & Database Debugger</h1>
+            <h1 class="text-2xl sm:text-3xl font-bold mb-6 text-center text-indigo-700">Railway Miljø & Database Debugger</h1>
             
-            <div class="mb-8 border p-4 rounded-lg bg-blue-50">
+            <div class="mb-8 border p-4 rounded-lg bg-blue-50 shadow-inner">
                 <h2 class="text-xl font-semibold mb-3 text-blue-700">1. Miljøvariabler Fundet (os.environ.get)</h2>
                 <ul class="list-none p-0">{env_table}</ul>
             </div>
@@ -111,7 +131,10 @@ def test_db():
                 {db_result_html}
             </div>
             
-            <p class='mt-6 text-sm text-gray-500 text-center'>Konfigurationsdata forsøgt brugt: {config}</p>
+            <p class='mt-6 text-xs text-gray-500 text-center break-words'>
+                Konfigurationsdata brugt (Host, Port er afgørende for typen): 
+                <br><span class="font-mono">{config_display}</span>
+            </p>
         </div>
     </body>
     </html>
