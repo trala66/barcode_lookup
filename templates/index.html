@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manuel Stregkode Opslag</title>
+<!-- Korrekt Tailwind CDN link -->
+<script src="https://www.google.com/search?q=https://cdn.tailwindcss.com"></script>
+<style>
+body { font-family: 'Inter', sans-serif; }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen flex items-center justify-center p-4">
+<div class="max-w-xl w-full bg-white shadow-2xl rounded-xl p-8 space-y-6">
+<h1 class="text-3xl font-bold text-center text-indigo-700">Manuel Stregkode Opslag</h1>
+<hr class="border-indigo-200">
+
+    <!-- Input Formular -->
+    <form method="POST" action="/" class="space-y-4">
+        <label for="barcode" class="block text-sm font-medium text-gray-700">Indtast Stregkode:</label>
+        <input 
+            type="text" 
+            id="barcode" 
+            name="barcode" 
+            value="{{ current_barcode if current_barcode else '' }}"
+            placeholder="Indtast stregkodenummer her..."
+            required 
+            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition duration-150"
+        >
+        <button 
+            type="submit" 
+            class="w-full py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-200"
+        >
+            Slå Pris Op
+        </button>
+    </form>
+    
+    <hr class="border-indigo-200">
+
+    {% if result %}
+    <!-- Succesvisning -->
+    <div class="text-center">
+        <svg class="mx-auto h-12 w-12 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <h2 class="mt-2 text-2xl font-semibold text-gray-900">Produkt Fundet!</h2>
+    </div>
+    
+    <div class="space-y-4">
+        <div class="flex justify-between p-3 bg-indigo-50 rounded-lg">
+            <span class="text-sm font-medium text-indigo-700">Stregkode:</span>
+            <span class="text-lg font-mono text-indigo-900">{{ result.barcode }}</span>
+        </div>
+        
+        <div class="border-b pb-2">
+            <span class="text-lg font-semibold text-gray-700">Beskrivelse:</span>
+            <p class="text-xl font-extrabold text-gray-900">{{ result.description }}</p>
+        </div>
+        
+        <div class="grid grid-cols-2 gap-4">
+            <div class="p-4 bg-green-50 rounded-lg shadow">
+                <span class="block text-sm font-medium text-green-700">Pris:</span>
+                <span class="block text-2xl font-extrabold text-green-800">{{ result.unitprice }}</span>
+            </div>
+            <div class="p-4 bg-yellow-50 rounded-lg shadow">
+                <span class="block text-sm font-medium text-yellow-700">Lager Antal:</span>
+                <span class="block text-2xl font-extrabold text-yellow-800">{{ result.quantity }}</span>
+            </div>
+        </div>
+    </div>
+
+    {% elif error %}
+    <!-- Fejlvisning -->
+    <div class="text-center text-red-600 space-y-4 p-6 bg-red-50 border-2 border-red-300 rounded-xl">
+        <svg class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <h2 class="text-xl font-semibold">❌ Opslag Fejlede</h2>
+        <p class="text-sm text-red-700"><strong>Stregkode:</strong> {{ current_barcode }}</p>
+        <p class="text-base font-medium">{{ error }}</p>
+        <p class="text-xs mt-4">Tjek databaseforbindelse og om stregkoden er korrekt registreret.</p>
+    </div>
+    {% else %}
+    <!-- Standardvisning -->
+    <p class="text-center text-gray-500">Indtast en stregkode ovenfor for at starte opslaget.</p>
+    {% endif %}
+
+</div>
+
+</body>
+</html>
